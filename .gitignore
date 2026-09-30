@@ -1,3 +1,5 @@
 __pycache__/
 *.pyc
 .pytest_cache/
+hydrogel_output/*.gif
+__pycache__/
