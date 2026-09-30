@@ -24,6 +24,8 @@ Model (dimensionless, stress in units of kT/v, v = volume of a water molecule)
    elastic part F_e is needed to keep the body compatible, which produces
    internal stress. F_e is governed by a compressible neo-Hookean energy
    whose shear modulus follows Flory's rubber elasticity, G = Nv*phi^(1/3).
+   Boundary: the right edge and the right halves of the top and bottom
+   edges are clamped (u = 0, green line in the plots); the rest is free.
    Each frame solves for mechanical equilibrium by minimizing the total
    elastic energy with Newton's method.
 
@@ -281,12 +283,12 @@ def main():
     n_nodes = len(nodes)
     wet = np.where(np.isclose(nodes[:, 0], 0.0))[0]
 
-    # remove rigid-body motion: pin the middle node of the dry (right) edge
-    # and fix the x-displacement of its top corner (stops rotation)
-    right = np.where(np.isclose(nodes[:, 0], L))[0]
-    right = right[np.argsort(nodes[right, 1])]
-    mid, top = right[len(right) // 2], right[-1]
-    fixed = np.array([2 * mid, 2 * mid + 1, 2 * top])
+    # clamped (u = 0) boundary: the whole right edge, plus the right half
+    # (x >= L/2, from the midpoint to the corner) of the top and bottom edges
+    on_right = np.isclose(nodes[:, 0], L)
+    on_top_bottom = np.isclose(nodes[:, 1], 0.0) | np.isclose(nodes[:, 1], L)
+    clamped = np.where(on_right | (on_top_bottom & (nodes[:, 0] >= 0.5 * L - 1e-12)))[0]
+    fixed = np.sort(np.concatenate([2 * clamped, 2 * clamped + 1]))
 
     diff = Diffusion(nodes, tris, args.D, wet)
     mech = Mechanics(nodes, tris, args.Nv, bulk_ratio=10.0, fixed_dofs=fixed)
@@ -331,6 +333,14 @@ def main():
         st_norm, st_cmap = dict(vmin=0.0, vmax=np.percentile(all_st, 99)), "inferno"
         st_label = "von Mises stress (kPa)"
 
+    # clamped boundary is fixed, so its path is the same in every frame
+    bottom = clamped[np.isclose(nodes[clamped, 1], 0.0)]
+    top = clamped[np.isclose(nodes[clamped, 1], L)]
+    right = clamped[on_right[clamped]]
+    clamp_path = np.vstack([nodes[bottom[np.argsort(nodes[bottom, 0])]],
+                            nodes[right[np.argsort(nodes[right, 1])]],
+                            nodes[top[np.argsort(-nodes[top, 0])]]])
+
     def draw(axes, h, cbars=None):
         x = nodes + h["u"].reshape(-1, 2)
         tri = mtri.Triangulation(x[:, 0], x[:, 1], tris)
@@ -348,6 +358,8 @@ def main():
         ps = ax_s.tripcolor(tri, h["stress"], shading="gouraud", cmap=st_cmap, **st_norm)
         for ax in axes:
             ax.triplot(tri, color="k", lw=0.3, alpha=0.5)
+            # clamped boundary: bottom half-edge -> right edge -> top half-edge
+            ax.plot(*clamp_path.T, color="#2e7d32", lw=4, solid_capstyle="butt", zorder=5)
         ax_w.set_title(f"water content   t = {h['t']:.3f} L²/D\nuptake = {h['uptake']:.2f} × dry volume")
         ax_s.set_title(f"internal stress on deformed mesh\nmax = {np.abs(h['stress']).max():.1f} kPa")
         return pw, ps
