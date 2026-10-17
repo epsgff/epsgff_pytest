@@ -59,6 +59,17 @@ def level_matrix(centroid, normal, target=UP):
     return M
 
 
+def level_and_zero_matrix(centroid, normal, target=UP):
+    """摆正后再沿 Z 平移，让选区的平均高度（即拟合中心的 Z）变为 0。
+
+    旋转绕拟合中心进行，中心本身不动；而拟合中心就是选区（按面积加权）的平均位置，
+    所以摆正后只需把整体下移 centroid[2]。
+    """
+    M = level_matrix(centroid, normal, target)
+    M[2, 3] -= float(np.asarray(centroid, dtype=float)[2])
+    return M
+
+
 def apply_transform(points, M):
     return np.asarray(points, dtype=float) @ M[:3, :3].T + M[:3, 3]
 

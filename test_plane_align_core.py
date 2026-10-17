@@ -5,6 +5,7 @@ from plane_align_core import (
     apply_transform,
     fit_plane,
     in_rect,
+    level_and_zero_matrix,
     level_matrix,
     near_visible_surface,
     orient_normal,
@@ -64,6 +65,21 @@ def test_level_matrix_levels_whole_object_and_keeps_centroid():
     assert tilt_degrees(orient_normal(n2, (0, 0, 1))) < 1e-6
     assert np.allclose(apply_transform(c[None], M)[0], c)  # 绕中心旋转，中心不动
     assert np.allclose(np.linalg.norm(out - out[0], axis=1), np.linalg.norm(pts - pts[0], axis=1))
+
+
+def test_level_and_zero_matrix_puts_selection_mean_height_at_zero():
+    pts = rough_tilted_points((0.08, -0.05, 1), n=5000)
+    patch = pts[:500]
+    w = np.random.default_rng(2).uniform(0.5, 2.0, len(patch))  # 模拟三角面面积
+    c, n = fit_plane(patch, w)
+    M = level_and_zero_matrix(c, orient_normal(n, (0, 0, 1)))
+    out = apply_transform(pts, M)
+    _, n2 = fit_plane(out[:500], w)
+    assert tilt_degrees(orient_normal(n2, (0, 0, 1))) < 1e-6
+    assert np.average(out[:500, 2], weights=w) == pytest.approx(0, abs=1e-9)
+    # 只比 level_matrix 多一个纯 Z 平移
+    diff = out - apply_transform(pts, level_matrix(c, orient_normal(n, (0, 0, 1))))
+    assert np.allclose(diff[:, :2], 0) and np.allclose(diff[:, 2], -c[2])
 
 
 def test_triangle_geometry():

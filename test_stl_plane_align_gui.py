@@ -60,6 +60,8 @@ def test_box_select_align_undo_save(window, tmp_path, monkeypatch):
     pv_before = w.heat.mapper.scalar_range
     w.align()
     assert core.tilt_degrees(w._fit()[1]) < 1e-6
+    # 摆正后选区（按面积加权）的平均高度为 0
+    assert np.average(w.centers[w.selected][:, 2], weights=w.areas[w.selected]) == pytest.approx(0, abs=1e-9)
     # 热图跟着更新：摆正后顶面高度范围（色标）明显变窄
     pv_after = w.heat.mapper.scalar_range
     assert np.allclose(w.mesh.point_data["Z"], w.mesh.points[:, 2])

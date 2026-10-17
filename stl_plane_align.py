@@ -113,7 +113,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # 右侧：顶视图高度热图（左键平移、滚轮缩放）
         self.heat = QtInteractor(self)
-        self.heat.set_background("#3a3a3a")
+        self.heat.set_background("white")
         self.heat.enable_parallel_projection()
         self.heat.enable_2d_style()
         heat_box = QtWidgets.QWidget()
@@ -190,6 +190,7 @@ class MainWindow(QtWidgets.QMainWindow):
         actor.mapper.SetScalarVisibility(False)  # 3D 视图保持灰色，高度颜色只用在热图
         self.heat.add_mesh(mesh, name="heat", scalars="Z", cmap="turbo", lighting=False,
                            scalar_bar_args={"title": "Z", "vertical": True, "fmt": "%.4g",
+                                            "color": "black",  # 白底上用黑字
                                             "position_x": 0.82, "position_y": 0.1,
                                             "height": 0.8, "width": 0.1})
         self._draw_selection()
@@ -285,7 +286,8 @@ class MainWindow(QtWidgets.QMainWindow):
         if fit is None:
             return
         centroid, normal = fit
-        M = core.level_matrix(centroid, normal)
+        # 摆正，并上下平移使选区平均高度为 0
+        M = core.level_and_zero_matrix(centroid, normal)
         self.history.append((self.mesh.points.copy(), self.view_ref))
         self.mesh.points = core.apply_transform(self.mesh.points, M)
         if self.view_ref is not None:
@@ -293,7 +295,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self._update_geometry()
         self._draw_selection()
         self._update_heatmap()
-        self._refresh(f"已旋转 {core.tilt_degrees(normal):.4f}°")
+        self._refresh(f"已旋转 {core.tilt_degrees(normal):.4f}°，Z 平移 {-centroid[2]:+.4g}"
+                      "（选区平均高度 = 0）")
 
     def undo(self):
         if self.history:
