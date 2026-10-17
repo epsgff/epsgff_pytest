@@ -14,7 +14,7 @@ os.environ.setdefault("QT_API", "pyside6")
 
 import pyvista as pv  # noqa: E402
 from pyvistaqt import QtInteractor  # noqa: E402
-from qtpy import QtGui, QtWidgets  # noqa: E402
+from qtpy import QtCore, QtGui, QtWidgets  # noqa: E402
 from vtkmodules.util.numpy_support import vtk_to_numpy  # noqa: E402
 from vtkmodules.vtkCommonCore import vtkFloatArray, vtkPoints  # noqa: E402
 from vtkmodules.vtkCommonDataModel import vtkCellArray, vtkPolyData  # noqa: E402
@@ -98,7 +98,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle(APP_NAME)
-        self.resize(1200, 800)
+        self.resize(1500, 850)
         self.setAcceptDrops(True)
         self.path = None
         self.mesh = None
@@ -109,8 +109,30 @@ class MainWindow(QtWidgets.QMainWindow):
         self.plotter = QtInteractor(self)
         self.plotter.set_background("#3a3a3a")
         self.plotter.add_axes()
-        self.setCentralWidget(self.plotter.interactor)
         self.selector = BoxSelector(self.plotter, self.select_box)
+
+        # 右侧：顶视图高度热图（左键平移、滚轮缩放）
+        self.heat = QtInteractor(self)
+        self.heat.set_background("#3a3a3a")
+        self.heat.enable_parallel_projection()
+        self.heat.enable_2d_style()
+        heat_box = QtWidgets.QWidget()
+        lay = QtWidgets.QVBoxLayout(heat_box)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(2)
+        title = QtWidgets.QLabel("顶视图高度热图")
+        title.setAlignment(QtCore.Qt.AlignCenter)
+        lay.addWidget(title)
+        lay.addWidget(self.heat.interactor, 1)
+        self.heat_info = QtWidgets.QLabel()
+        self.heat_info.setAlignment(QtCore.Qt.AlignCenter)
+        lay.addWidget(self.heat_info)
+
+        splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
+        splitter.addWidget(self.plotter.interactor)
+        splitter.addWidget(heat_box)
+        splitter.setSizes([700, 500])
+        self.setCentralWidget(splitter)
 
         tb = self.addToolBar("工具")
         tb.setMovable(False)
@@ -164,8 +186,14 @@ class MainWindow(QtWidgets.QMainWindow):
         self.view_ref = None
         self.history.clear()
         self._update_geometry()
-        self.plotter.add_mesh(mesh, name="mesh", color="#c8c8c8", specular=0.3)
+        actor = self.plotter.add_mesh(mesh, name="mesh", color="#c8c8c8", specular=0.3)
+        actor.mapper.SetScalarVisibility(False)  # 3D 视图保持灰色，高度颜色只用在热图
+        self.heat.add_mesh(mesh, name="heat", scalars="Z", cmap="turbo", lighting=False,
+                           scalar_bar_args={"title": "Z", "vertical": True, "fmt": "%.4g",
+                                            "position_x": 0.82, "position_y": 0.1,
+                                            "height": 0.8, "width": 0.1})
         self._draw_selection()
+        self._update_heatmap()
         self.plotter.view_isometric()
         self.setWindowTitle(f"{APP_NAME} — {os.path.basename(path)}")
         self._refresh()
@@ -264,6 +292,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.view_ref = M[:3, :3] @ self.view_ref
         self._update_geometry()
         self._draw_selection()
+        self._update_heatmap()
         self._refresh(f"已旋转 {core.tilt_degrees(normal):.4f}°")
 
     def undo(self):
@@ -271,11 +300,30 @@ class MainWindow(QtWidgets.QMainWindow):
             self.mesh.points, self.view_ref = self.history.pop()
             self._update_geometry()
             self._draw_selection()
+            self._update_heatmap()
             self._refresh("已撤销")
 
     # ---- 显示 ----------------------------------------------------------------
     def _update_geometry(self):
         self.centers, self.normals, self.areas = core.triangle_geometry(self.mesh.points, self.tris)
+        self.mesh.point_data["Z"] = self.mesh.points[:, 2]
+
+    def _update_heatmap(self):
+        """按当前（摆正后的）高度刷新热图色标并重新取顶视图。"""
+        if self.mesh is None:
+            return
+        zmin, zmax = core.top_view_height_range(self.mesh.points)
+        self.heat.update_scalar_bar_range([zmin, zmax], name="Z")
+        self.heat.view_xy()
+        self.heat.reset_camera()
+        cam = self.heat.camera  # 缩小一点并左移，给右边的色标留位置
+        cam.zoom(0.85)
+        w, h = self.heat.renderer.GetSize()
+        shift = 0.09 * 2 * cam.parallel_scale * w / max(h, 1)
+        cam.focal_point = np.add(cam.focal_point, (shift, 0, 0))
+        cam.position = np.add(cam.position, (shift, 0, 0))
+        self.heat.render()
+        self.heat_info.setText(f"顶面高度 {zmin:.4g} ~ {zmax:.4g}（PV {zmax - zmin:.4g}）")
 
     def _draw_selection(self):
         if self.mesh is None or not self.selected.any():

@@ -113,3 +113,26 @@ def near_visible_surface(xy, depth, surface_depth, tolerance):
     px = np.clip(np.floor(xy[:, 0]).astype(int), 0, w - 1)
     py = np.clip(np.floor(xy[:, 1]).astype(int), 0, h - 1)
     return depth <= surface_depth[py, px] + tolerance
+
+
+# --- 顶视图高度热图 -----------------------------------------------------------
+
+def top_view_height_range(points, bins=None, percentiles=(0.5, 99.5)):
+    """顶视图里能看到的表面的高度范围，用作热图色标。
+
+    把点按 (x, y) 分格，每格取最高点（俯视时看到的就是它），
+    再取这些高度的分位数，避免被底座底面和个别尖刺拉宽色标。
+    """
+    p = np.asarray(points, dtype=float)
+    if bins is None:  # 格子要比网格点间距粗，每格才一定落有顶面点
+        bins = int(np.clip(np.sqrt(len(p) / 16), 8, 256))
+    lo, hi = p[:, :2].min(axis=0), p[:, :2].max(axis=0)
+    span = np.where(hi > lo, hi - lo, 1.0)
+    ij = np.minimum(((p[:, :2] - lo) / span * bins).astype(int), bins - 1)
+    top = np.full(bins * bins, -np.inf)
+    np.maximum.at(top, ij[:, 1] * bins + ij[:, 0], p[:, 2])
+    top = top[np.isfinite(top)]
+    zmin, zmax = np.percentile(top, percentiles)
+    if zmax <= zmin:
+        zmax = zmin + 1e-9
+    return float(zmin), float(zmax)

@@ -11,6 +11,7 @@ from plane_align_core import (
     project_to_display,
     rotation_between,
     tilt_degrees,
+    top_view_height_range,
     triangle_geometry,
     zbuffer_to_view_depth,
 )
@@ -99,3 +100,22 @@ def test_near_visible_surface_drops_hidden_bottom():
     xy = np.array([[1.5, 1.5], [1.5, 1.5], [2.2, 3.9]])
     depth = np.array([10.05, 13.0, 9.0])  # 顶面、被挡住的底面、凸起
     assert near_visible_surface(xy, depth, surface, 0.1).tolist() == [True, False, True]
+
+
+def test_top_view_height_range_ignores_hidden_bottom():
+    rng = np.random.default_rng(0)
+    x, y = rng.uniform(0, 10, (2, 20000))
+    top = np.c_[x, y, 5 + 0.1 * x]  # 顶面高度 5 ~ 6
+    bottom = np.c_[x, y, np.zeros_like(x)]  # 被挡住的底面
+    for bins in (64, None):
+        zmin, zmax = top_view_height_range(np.vstack([top, bottom]), bins=bins)
+        assert 4.9 < zmin < 5.1 and 5.9 < zmax < 6.01
+
+
+def test_top_view_height_range_grid_mesh_with_base():
+    # 规则网格顶面 + 正下方的底面（像扫描件），默认分格不能漏到底面
+    x, y = np.meshgrid(np.linspace(0, 3, 121), np.linspace(0, 2, 81))
+    top = np.c_[x.ravel(), y.ravel(), 1 + 0.01 * x.ravel()]
+    bottom = top - [0, 0, 0.6]
+    zmin, zmax = top_view_height_range(np.vstack([top, bottom]))
+    assert zmin > 0.99 and zmax < 1.031

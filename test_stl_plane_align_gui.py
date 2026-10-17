@@ -57,8 +57,13 @@ def test_box_select_align_undo_save(window, tmp_path, monkeypatch):
     assert w.centers[w.selected][:, 2].min() > w.centers[:, 2].min() + 0.3  # 没选到底面
     assert core.tilt_degrees(w._fit()[1]) == pytest.approx(np.hypot(3, 5), abs=0.2)
 
+    pv_before = w.heat.mapper.scalar_range
     w.align()
     assert core.tilt_degrees(w._fit()[1]) < 1e-6
+    # 热图跟着更新：摆正后顶面高度范围（色标）明显变窄
+    pv_after = w.heat.mapper.scalar_range
+    assert np.allclose(w.mesh.point_data["Z"], w.mesh.points[:, 2])
+    assert (pv_after[1] - pv_after[0]) < 0.5 * (pv_before[1] - pv_before[0])
 
     out = tmp_path / "aligned.stl"
     monkeypatch.setattr(QtWidgets.QFileDialog, "getSaveFileName", lambda *a, **k: (str(out), ""))
